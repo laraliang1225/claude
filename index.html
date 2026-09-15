@@ -2,23 +2,453 @@
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>旅行手册</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>土耳其行程手册</title>
+<script>
+(function(){
+  try{
+    var h = new Date().toLocaleString('en-US', {timeZone:'Europe/Istanbul', hour12:false, hour:'2-digit'});
+    var hour = parseInt(h,10);
+    var theme = (hour>=7 && hour<19) ? 'day' : 'night';
+    document.documentElement.setAttribute('data-theme', theme);
+  }catch(e){ document.documentElement.setAttribute('data-theme','day'); }
+})();
+</script>
 <style>
-  html,body{height:100%;margin:0;}
-  body{
-    display:flex;align-items:center;justify-content:center;
-    font-family:-apple-system,BlinkMacSystemFont,"Helvetica Neue",Arial,sans-serif;
-    background:#f5f5f4;color:#333;text-align:center;
+  :root{
+    padding-top: env(safe-area-inset-top, 0px);
+    padding-bottom: env(safe-area-inset-bottom, 0px);
   }
-  h1{font-size:1.4rem;font-weight:600;}
-  p{color:#888;}
+  :root[data-theme="day"]{
+    --bg:#faf5ec; --card:#ffffff; --text:#2b2520; --muted:#8a7f6f;
+    --line:#e6dcc9; --accent:#c1440e; --accent2:#2f6f4e; --badge-bg:#fbe9dd; --badge-text:#a6390a;
+    --shadow: 0 1px 3px rgba(60,40,20,0.08);
+  }
+  :root[data-theme="night"]{
+    --bg:#15130f; --card:#211e19; --text:#efe7d9; --muted:#9c9182;
+    --line:#39332a; --accent:#e08a4f; --accent2:#6fbf92; --badge-bg:#3d2a1c; --badge-text:#f0b085;
+    --shadow: 0 1px 4px rgba(0,0,0,0.4);
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0; background:var(--bg); color:var(--text);
+    font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Helvetica Neue",Arial,sans-serif;
+    line-height:1.55;
+    padding:0 16px 48px;
+  }
+  a{color:var(--accent);}
+  h1,h2,h3{margin:0 0 8px;}
+  .wrap{max-width:720px; margin:0 auto;}
+  .top-title{
+    padding:20px 0 8px; text-align:center;
+  }
+  .top-title h1{font-size:1.3rem; letter-spacing:1px;}
+  .top-title p{margin:0; color:var(--muted); font-size:0.85rem;}
+
+  section{margin-top:22px;}
+  .card{
+    background:var(--card); border:1px solid var(--line); border-radius:16px;
+    padding:18px 20px; box-shadow:var(--shadow);
+  }
+
+  /* focus card */
+  .focus-card{
+    background:linear-gradient(135deg, var(--card), var(--card));
+    border:1px solid var(--line); border-radius:20px; padding:22px 20px;
+    box-shadow:var(--shadow); text-align:center;
+  }
+  .focus-label{font-size:0.8rem; color:var(--muted); letter-spacing:2px; text-transform:uppercase;}
+  .focus-event{font-size:1.15rem; font-weight:600; margin:6px 0 4px;}
+  .focus-when{font-size:0.8rem; color:var(--muted); margin-bottom:14px;}
+  .countdown{display:flex; justify-content:center; gap:10px; flex-wrap:wrap;}
+  .cd-box{min-width:64px;}
+  .cd-num{font-size:2rem; font-weight:700; color:var(--accent); font-variant-numeric:tabular-nums;}
+  .cd-unit{font-size:0.7rem; color:var(--muted);}
+  .now-line{margin-top:14px; font-size:0.78rem; color:var(--muted);}
+
+  /* overview map */
+  h2.section-title{font-size:1rem; color:var(--muted); letter-spacing:1px; text-transform:uppercase; margin-bottom:10px;}
+  .map-card svg{width:100%; height:auto; display:block;}
+  .map-legend{display:flex; gap:16px; flex-wrap:wrap; margin-top:10px; font-size:0.8rem; color:var(--muted);}
+  .map-legend span{display:inline-flex; align-items:center; gap:6px;}
+  .dot{width:10px; height:10px; border-radius:50%; display:inline-block;}
+
+  /* logistics */
+  .logi-item{padding:14px 0; border-bottom:1px solid var(--line);}
+  .logi-item:last-child{border-bottom:none;}
+  .logi-title{font-weight:600; margin-bottom:4px;}
+  .logi-meta{font-size:0.85rem; color:var(--muted); margin:2px 0;}
+  .logi-meta a{color:var(--accent); text-decoration:none;}
+  .tag{
+    display:inline-block; background:var(--badge-bg); color:var(--badge-text);
+    font-size:0.72rem; padding:2px 8px; border-radius:999px; margin-left:6px; vertical-align:middle;
+  }
+
+  /* day timeline */
+  .day{margin-bottom:16px;}
+  .day-head{
+    display:flex; align-items:baseline; justify-content:space-between; gap:10px;
+    padding:14px 20px; cursor:default;
+  }
+  .day-date{font-weight:700; font-size:1rem;}
+  .day-sub{font-size:0.78rem; color:var(--muted);}
+  .day-body{padding:0 20px 18px;}
+  .row{display:flex; gap:14px; padding:8px 0;}
+  .row .time{flex:0 0 64px; font-size:0.82rem; color:var(--muted); padding-top:2px;}
+  .row .content{flex:1; font-size:0.92rem;}
+  .row .content a{text-decoration:none; border-bottom:1px dashed var(--accent); color:var(--text);}
+  .note{
+    margin-top:6px; font-size:0.8rem; color:var(--accent); background:var(--badge-bg);
+    padding:8px 10px; border-radius:10px;
+  }
+  details.daymap{margin-top:10px;}
+  details.daymap summary{
+    cursor:pointer; font-size:0.8rem; color:var(--accent); list-style:none;
+  }
+  details.daymap summary::-webkit-details-marker{display:none;}
+  details.daymap summary::before{content:"▸ ";}
+  details.daymap[open] summary::before{content:"▾ ";}
+  details.daymap iframe{
+    width:100%; height:260px; border:0; border-radius:12px; margin-top:8px;
+  }
+  .nav-btn{
+    display:inline-block; margin-top:8px; font-size:0.8rem; padding:7px 12px;
+    border-radius:999px; background:var(--accent); color:#fff !important; text-decoration:none;
+    border-bottom:none !important;
+  }
+
+  /* todo */
+  ul.plain{margin:0; padding-left:1.1em;}
+  ul.plain li{margin-bottom:8px; font-size:0.92rem;}
+
+  /* tips */
+  .tips-grid{display:grid; gap:10px;}
+  .tip{font-size:0.9rem;}
+  .tip b{color:var(--accent);}
+
+  footer{text-align:center; color:var(--muted); font-size:0.75rem; margin-top:30px;}
 </style>
 </head>
 <body>
-  <div>
-    <h1>旅行手册准备中</h1>
-    <p>行程信息确认后即会更新为正式内容</p>
+<div class="wrap">
+
+  <div class="top-title">
+    <h1>伊斯坦布尔 · 卡帕多奇亚 · 安塔利亚</h1>
+    <p>2026.09.16 – 09.28 · 2人</p>
   </div>
+
+  <section class="focus-card">
+    <div class="focus-label">此刻关注</div>
+    <div class="focus-event" id="focus-event">加载中…</div>
+    <div class="focus-when" id="focus-when"></div>
+    <div class="countdown" id="countdown">
+      <div class="cd-box"><div class="cd-num" id="cd-d">--</div><div class="cd-unit">天</div></div>
+      <div class="cd-box"><div class="cd-num" id="cd-h">--</div><div class="cd-unit">时</div></div>
+      <div class="cd-box"><div class="cd-num" id="cd-m">--</div><div class="cd-unit">分</div></div>
+      <div class="cd-box"><div class="cd-num" id="cd-s">--</div><div class="cd-unit">秒</div></div>
+    </div>
+    <div class="now-line" id="now-line"></div>
+  </section>
+
+  <section>
+    <h2 class="section-title">行程总览</h2>
+    <div class="card map-card">
+      <svg viewBox="0 0 520 380" xmlns="http://www.w3.org/2000/svg">
+        <path d="M115,80 C 220,40 300,90 420,190" fill="none" stroke="#3b82c4" stroke-width="3" stroke-linecap="round" stroke-dasharray="2 10"/>
+        <path d="M420,190 C 360,260 260,300 175,320" fill="none" stroke="#d98a2b" stroke-width="3" stroke-linecap="round" stroke-dasharray="2 10"/>
+        <text x="255" y="105" font-size="12" fill="#3b82c4" text-anchor="middle">✈ 9/21</text>
+        <text x="330" y="270" font-size="12" fill="#d98a2b" text-anchor="middle">✈ 9/24</text>
+
+        <circle cx="115" cy="80" r="9" fill="#c1440e"/>
+        <text x="115" y="55" font-size="15" font-weight="700" fill="currentColor" text-anchor="middle">伊斯坦布尔</text>
+        <text x="115" y="105" font-size="11" fill="currentColor" text-anchor="middle" opacity="0.75">🏠 Hammamhane · 4晚</text>
+
+        <circle cx="420" cy="190" r="9" fill="#c1440e"/>
+        <text x="420" y="165" font-size="15" font-weight="700" fill="currentColor" text-anchor="middle">卡帕多奇亚</text>
+        <text x="420" y="215" font-size="11" fill="currentColor" text-anchor="middle" opacity="0.75">🏠 Vista Cave→Tulip Cave · 3晚</text>
+
+        <circle cx="175" cy="320" r="9" fill="#c1440e"/>
+        <text x="175" y="345" font-size="15" font-weight="700" fill="currentColor" text-anchor="middle">安塔利亚</text>
+        <text x="175" y="298" font-size="11" fill="currentColor" text-anchor="middle" opacity="0.75">🏠 The Ninova · 4晚</text>
+      </svg>
+      <div class="map-legend">
+        <span><span class="dot" style="background:#3b82c4"></span>伊斯坦布尔→卡帕多奇亚(飞机)</span>
+        <span><span class="dot" style="background:#d98a2b"></span>卡帕多奇亚→安塔利亚(飞机)</span>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2 class="section-title">已确认预订</h2>
+    <div class="card">
+      <div class="logi-item">
+        <div class="logi-title">✈ TK80 · 土耳其航空</div>
+        <div class="logi-meta">San Francisco (SFO) → Istanbul (IST)</div>
+        <div class="logi-meta">9月16日(周三) 18:45 起飞 <span class="tag">旧金山时间</span></div>
+        <div class="logi-meta">9月17日(周四) 17:40 到达 <span class="tag">伊斯坦布尔时间</span> · 直飞 12h55m</div>
+      </div>
+      <div class="logi-item">
+        <div class="logi-title">🚗 机场接机</div>
+        <div class="logi-meta">9月17日 17:40 · 伊斯坦布尔机场 → Hammamhane Hotel</div>
+        <div class="logi-meta">接机点标注 Tayakadın(伊斯坦布尔新机场附近)</div>
+      </div>
+      <div class="logi-item">
+        <div class="logi-title">🏨 <a href="https://www.google.com/maps/dir/?api=1&destination=Hammamhane%20Hotel%20Beyoglu%20Istanbul" target="_blank" rel="noopener">Hammamhane Hotel</a></div>
+        <div class="logi-meta">Firuzağa Mah. Çukurcuma Cad. No:45, Beyoğlu, 34425 Istanbul</div>
+        <div class="logi-meta">9月17日 14:00 起入住 → 9月21日 需在中午12点前退房(见下方提醒)</div>
+      </div>
+      <div class="logi-item">
+        <div class="logi-title">✈ PC4028 · 飞马航空</div>
+        <div class="logi-meta">Istanbul Sabiha Gökçen (SAW) → Kayseri (ASR)</div>
+        <div class="logi-meta">9月21日(周一) 12:30 起飞 → 13:50 到达 <span class="tag">伊斯坦布尔时间</span></div>
+        <div class="note">⚠️ SAW 机场在亚洲区,离 Beyoğlu 酒店较远(车程约1~1.5小时起)。不要按12:00退房时间来算,建议最晚9:00-9:30就从酒店出发。</div>
+      </div>
+      <div class="logi-item">
+        <div class="logi-title">🏨 Vista Cave Hotel</div>
+        <div class="logi-meta">Aydınlı Orta Mahalle, Aydınlı Sokak 23, 50180 Göreme</div>
+        <div class="logi-meta">9月21日 – 9月23日 · 2晚</div>
+      </div>
+      <div class="logi-item">
+        <div class="logi-title">🏨 Tulip Cave Suites</div>
+        <div class="logi-meta">Aydınlı Sk. No 18, 50180 Göreme</div>
+        <div class="logi-meta">9月23日 – 9月24日 · 1晚 · 不可退</div>
+      </div>
+      <div class="logi-item">
+        <div class="logi-title">✈ PC3505 · 飞马航空</div>
+        <div class="logi-meta">Kayseri (ASR) → Antalya (AYT)</div>
+        <div class="logi-meta">9月24日(周四) 18:10 起飞 → 19:30 到达 <span class="tag">伊斯坦布尔时间</span></div>
+      </div>
+      <div class="logi-item">
+        <div class="logi-title">🏨 The Ninova Hotel</div>
+        <div class="logi-meta">Barbaros Mah. Hamitefendi Sok. No:9, Kaleiçi, 07100 Antalya</div>
+        <div class="logi-meta">9月24日 – 9月28日 · 4晚</div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2 class="section-title">逐日行程</h2>
+
+    <div class="day card">
+      <div class="day-head"><div class="day-date">9/16 周三</div><div class="day-sub">出发日</div></div>
+      <div class="day-body">
+        <div class="row"><div class="time">18:45</div><div class="content">TK80 从 <a href="https://www.google.com/maps/dir/?api=1&destination=San%20Francisco%20International%20Airport" target="_blank" rel="noopener">San Francisco (SFO)</a> 起飞,飞往伊斯坦布尔(旧金山时间)</div></div>
+      </div>
+    </div>
+
+    <div class="day card">
+      <div class="day-head"><div class="day-date">9/17 周四</div><div class="day-sub">抵达伊斯坦布尔</div></div>
+      <div class="day-body">
+        <div class="row"><div class="time">17:40</div><div class="content">落地 <a href="https://www.google.com/maps/dir/?api=1&destination=Istanbul%20Airport" target="_blank" rel="noopener">Istanbul Airport (IST)</a>,接机送往酒店</div></div>
+        <div class="row"><div class="time">~19:30</div><div class="content">入住 <a href="https://www.google.com/maps/dir/?api=1&destination=Hammamhane%20Hotel%20Beyoglu%20Istanbul" target="_blank" rel="noopener">Hammamhane Hotel</a>,周边简单吃饭休息</div></div>
+        <div class="note">当天基本没有游玩时间,不用安排活动。</div>
+      </div>
+    </div>
+
+    <div class="day card">
+      <div class="day-head"><div class="day-date">9/18 周五</div><div class="day-sub">老城区</div></div>
+      <div class="day-body">
+        <div class="row"><div class="time">09:00</div><div class="content"><a href="https://www.google.com/maps/dir/?api=1&destination=Hagia%20Sophia%20Istanbul" target="_blank" rel="noopener">圣索菲亚 Ayasofya Camii</a></div></div>
+        <div class="row"><div class="time">10:15</div><div class="content"><a href="https://www.google.com/maps/dir/?api=1&destination=Little%20Hagia%20Sophia%20Mosque%20Istanbul" target="_blank" rel="noopener">Little Hagia Sophia Mosque</a></div></div>
+        <div class="row"><div class="time">11:00</div><div class="content"><a href="https://www.google.com/maps/dir/?api=1&destination=Sultan%20Ahmed%20Mosque%20Istanbul" target="_blank" rel="noopener">蓝色清真寺 Sultanahmet Camii</a></div></div>
+        <div class="row"><div class="time">12:00</div><div class="content"><a href="https://www.google.com/maps/dir/?api=1&destination=Basilica%20Cistern%20Istanbul" target="_blank" rel="noopener">地下水宫 Yerebatan Sarnıcı</a><span class="tag">🎫 建议提前在线订票</span></div></div>
+        <div class="row"><div class="time">14:30</div><div class="content"><a href="https://www.google.com/maps/dir/?api=1&destination=Topkapi%20Palace%20Istanbul" target="_blank" rel="noopener">托普卡珀老皇宫 Topkapı Sarayı</a></div></div>
+        <div class="note">⚠️ 圣索菲亚 + 蓝色清真寺是周五礼拜日,当天 12:00-14:30 左右会因主麻日礼拜暂停对游客开放,已把这两处排在上午、地下水宫排在中午(不受影响)、老皇宫放到下午2:30后,避开关闭时段。</div>
+        <details class="daymap">
+          <summary>展开当日路线地图</summary>
+          <iframe loading="lazy" src="https://www.google.com/maps?saddr=Hagia+Sophia,+Istanbul&daddr=Sultan+Ahmed+Mosque,+Istanbul+to:Basilica+Cistern,+Istanbul+to:Topkapi+Palace,+Istanbul&output=embed"></iframe>
+        </details>
+        <a class="nav-btn" target="_blank" rel="noopener" href="https://www.google.com/maps/dir/?api=1&destination=Hammamhane%20Hotel%20Beyoglu%20Istanbul&waypoints=Hagia%20Sophia%20Istanbul|Sultan%20Ahmed%20Mosque%20Istanbul|Basilica%20Cistern%20Istanbul|Topkapi%20Palace%20Istanbul">一键打开全天多点导航</a>
+      </div>
+    </div>
+
+    <div class="day card">
+      <div class="day-head"><div class="day-date">9/19 周六</div><div class="day-sub">大巴扎 · 博斯普鲁斯</div></div>
+      <div class="day-body">
+        <div class="row"><div class="time">上午</div><div class="content"><a href="https://www.google.com/maps/dir/?api=1&destination=Grand%20Bazaar%20Istanbul" target="_blank" rel="noopener">大巴扎 Kapalı Çarşı</a></div></div>
+        <div class="row"><div class="time"></div><div class="content"><a href="https://www.google.com/maps/dir/?api=1&destination=Suleymaniye%20Mosque%20Istanbul" target="_blank" rel="noopener">苏莱曼尼耶清真寺</a></div></div>
+        <div class="row"><div class="time"></div><div class="content"><a href="https://www.google.com/maps/dir/?api=1&destination=Spice%20Bazaar%20Istanbul" target="_blank" rel="noopener">Egyptian Bazaar 香料市场</a></div></div>
+        <div class="row"><div class="time">~18:45</div><div class="content"><a href="https://www.google.com/maps/dir/?api=1&destination=Eminonu%20Pier%20Istanbul" target="_blank" rel="noopener">博斯普鲁斯海峡游船</a>(公共轮渡,90分钟,约日落时分,当天日落约19:00左右)</div></div>
+        <div class="note">大巴扎每周日休息,你们排的是周六,没问题,正常开放。</div>
+        <a class="nav-btn" target="_blank" rel="noopener" href="https://www.google.com/maps/dir/?api=1&destination=Hammamhane%20Hotel%20Beyoglu%20Istanbul&waypoints=Grand%20Bazaar%20Istanbul|Suleymaniye%20Mosque%20Istanbul|Spice%20Bazaar%20Istanbul|Eminonu%20Pier%20Istanbul">一键打开全天多点导航</a>
+      </div>
+    </div>
+
+    <div class="day card">
+      <div class="day-head"><div class="day-date">9/20 周日</div><div class="day-sub">新城区</div></div>
+      <div class="day-body">
+        <div class="row"><div class="time"></div><div class="content"><a href="https://www.google.com/maps/dir/?api=1&destination=Dolmabahce%20Palace%20Istanbul" target="_blank" rel="noopener">多尔玛巴赫切宫 Dolmabahçe Sarayı</a><span class="tag">🎫 需提前订时段票</span></div></div>
+        <div class="row"><div class="time"></div><div class="content"><a href="https://www.google.com/maps/dir/?api=1&destination=Istiklal%20Avenue%20Istanbul" target="_blank" rel="noopener">独立大街 İstiklal Cd.</a></div></div>
+        <div class="row"><div class="time"></div><div class="content"><a href="https://www.google.com/maps/dir/?api=1&destination=Galata%20Tower%20Istanbul" target="_blank" rel="noopener">加拉塔石塔</a></div></div>
+        <div class="row"><div class="time"></div><div class="content"><a href="https://www.google.com/maps/dir/?api=1&destination=Istanbul%20Modern" target="_blank" rel="noopener">伊斯坦堡现代艺术博物馆</a></div></div>
+        <div class="note">多尔玛巴赫切宫只周一闭馆,周日照常开放没问题;但是强制跟随场次讲解、限流参观,周日客流大,建议提前在线订好时段票。</div>
+        <a class="nav-btn" target="_blank" rel="noopener" href="https://www.google.com/maps/dir/?api=1&destination=Hammamhane%20Hotel%20Beyoglu%20Istanbul&waypoints=Dolmabahce%20Palace%20Istanbul|Istiklal%20Avenue%20Istanbul|Galata%20Tower%20Istanbul|Istanbul%20Modern">一键打开全天多点导航</a>
+      </div>
+    </div>
+
+    <div class="day card">
+      <div class="day-head"><div class="day-date">9/21 周一</div><div class="day-sub">飞往卡帕多奇亚</div></div>
+      <div class="day-body">
+        <div class="row"><div class="time">≤09:30</div><div class="content">从 Hammamhane Hotel 出发去 <a href="https://www.google.com/maps/dir/?api=1&destination=Sabiha%20Gokcen%20Airport" target="_blank" rel="noopener">SAW 机场</a></div></div>
+        <div class="row"><div class="time">12:30</div><div class="content">PC4028 起飞 → 13:50 到达 ASR(开塞利)</div></div>
+        <div class="row"><div class="time">下午</div><div class="content">入住 <a href="https://www.google.com/maps/dir/?api=1&destination=Vista%20Cave%20Hotel%20Goreme" target="_blank" rel="noopener">Vista Cave Hotel</a>,逛<a href="https://www.google.com/maps/dir/?api=1&destination=Goreme%20Cappadocia" target="_blank" rel="noopener">格雷梅镇</a></div></div>
+        <div class="row"><div class="time">日落</div><div class="content"><a href="https://www.google.com/maps/dir/?api=1&destination=Asiklar%20Tepesi%20Goreme" target="_blank" rel="noopener">情人坡日落观景台 Aşıklar Tepesi</a></div></div>
+      </div>
+    </div>
+
+    <div class="day card">
+      <div class="day-head"><div class="day-date">9/22 周二</div><div class="day-sub">热气球 · 红线一日游</div></div>
+      <div class="day-body">
+        <div class="row"><div class="time">日出前</div><div class="content">热气球<span class="tag">🎫 已订/需预约</span></div></div>
+        <div class="row"><div class="time">全天</div><div class="content">红线一日游:<a href="https://www.google.com/maps/dir/?api=1&destination=Goreme%20Open%20Air%20Museum" target="_blank" rel="noopener">格雷梅露天博物馆</a>、<a href="https://www.google.com/maps/dir/?api=1&destination=Cavusin%20Cappadocia" target="_blank" rel="noopener">恰乌辛村&大鸽房教堂</a>、<a href="https://www.google.com/maps/dir/?api=1&destination=Devrent%20Valley" target="_blank" rel="noopener">精灵烟囱集群 & 迪夫里特峡谷</a></div></div>
+      </div>
+    </div>
+
+    <div class="day card">
+      <div class="day-head"><div class="day-date">9/23 周三</div><div class="day-sub">绿线一日游 · 换酒店</div></div>
+      <div class="day-body">
+        <div class="row"><div class="time">日出前</div><div class="content">热气球(若连续第二天预订)<span class="tag">🎫 待确认</span></div></div>
+        <div class="row"><div class="time">出发前</div><div class="content">先把行李从 Vista Cave Hotel 搬到 <a href="https://www.google.com/maps/dir/?api=1&destination=Tulip%20Cave%20Suites%20Goreme" target="_blank" rel="noopener">Tulip Cave Suites</a> 办理入住,再出门跟团</div></div>
+        <div class="row"><div class="time">全天</div><div class="content">绿线一日游:<a href="https://www.google.com/maps/dir/?api=1&destination=Derinkuyu%20Underground%20City" target="_blank" rel="noopener">德林库尤地下城</a>、<a href="https://www.google.com/maps/dir/?api=1&destination=Selime%20Monastery" target="_blank" rel="noopener">塞利梅修道院</a></div></div>
+        <div class="row"><div class="time">傍晚</div><div class="content"><a href="https://www.google.com/maps/dir/?api=1&destination=Zemi%20Valley%20Goreme" target="_blank" rel="noopener">Zemi Valley 徒步</a>(视当天体力,可缩短或跳过)</div></div>
+        <div class="note">⚠️ 这天排得很满:凌晨热气球 + 全天绿线团 + 换酒店 + 傍晚徒步。建议行李在早上团出发前就搬完,晚上视疲劳程度决定要不要走完2小时徒步。</div>
+      </div>
+    </div>
+
+    <div class="day card">
+      <div class="day-head"><div class="day-date">9/24 周四</div><div class="day-sub">飞往安塔利亚</div></div>
+      <div class="day-body">
+        <div class="row"><div class="time">上午</div><div class="content">Tulip Cave Suites 退房,卡帕多奇亚自由活动(时间充裕)</div></div>
+        <div class="row"><div class="time">18:10</div><div class="content">PC3505 从 <a href="https://www.google.com/maps/dir/?api=1&destination=Kayseri%20Erkilet%20Airport" target="_blank" rel="noopener">ASR 机场</a>起飞 → 19:30 到达 AYT(安塔利亚)</div></div>
+        <div class="row"><div class="time">晚上</div><div class="content">入住 <a href="https://www.google.com/maps/dir/?api=1&destination=The%20Ninova%20Hotel%20Antalya" target="_blank" rel="noopener">The Ninova Hotel</a></div></div>
+        <div class="note">退房到飞机之间有大半天空档,可以安排半日活动或轻松休息再去开塞利机场(车程约1小时)。</div>
+      </div>
+    </div>
+
+    <div class="day card">
+      <div class="day-head"><div class="day-date">9/25 周五</div><div class="day-sub">卡勒奇老城</div></div>
+      <div class="day-body">
+        <div class="row"><div class="time"></div><div class="content"><a href="https://www.google.com/maps/dir/?api=1&destination=Hadrians%20Gate%20Antalya" target="_blank" rel="noopener">哈德良门</a></div></div>
+        <div class="row"><div class="time"></div><div class="content"><a href="https://www.google.com/maps/dir/?api=1&destination=Kaleici%20Antalya" target="_blank" rel="noopener">卡勒奇老城 Kaleiçi</a></div></div>
+        <div class="row"><div class="time"></div><div class="content"><a href="https://www.google.com/maps/dir/?api=1&destination=Karaalioglu%20Parki%20Antalya" target="_blank" rel="noopener">卡拉阿里奥卢公园</a></div></div>
+        <div class="row"><div class="time">日落</div><div class="content"><a href="https://www.google.com/maps/dir/?api=1&destination=Antalya%20Marina" target="_blank" rel="noopener">Antalya Port</a></div></div>
+        <a class="nav-btn" target="_blank" rel="noopener" href="https://www.google.com/maps/dir/?api=1&destination=The%20Ninova%20Hotel%20Antalya&waypoints=Hadrians%20Gate%20Antalya|Kaleici%20Antalya|Karaalioglu%20Parki%20Antalya|Antalya%20Marina">一键打开全天多点导航</a>
+      </div>
+    </div>
+
+    <div class="day card">
+      <div class="day-head"><div class="day-date">9/26 周六</div><div class="day-sub">Suluada 跳岛游</div></div>
+      <div class="day-body">
+        <div class="row"><div class="time">~08:00</div><div class="content"><a href="https://www.google.com/maps/dir/?api=1&destination=Suluada%20Island%20Adrasan" target="_blank" rel="noopener">Suluada 跳岛游</a><span class="tag">🎫 需提前预订</span></div></div>
+        <div class="note">这是全天团:酒店接送约早8点出发,车程约1.5~2小时到 Adrasan,船上10:00-15:00,加上往返一般要到傍晚才回到酒店,全程10-12小时。当天不用再安排别的活动,确认是含接送的跟团,不是自驾。</div>
+      </div>
+    </div>
+
+    <div class="day card">
+      <div class="day-head"><div class="day-date">9/27 周日</div><div class="day-sub">瀑布 · 海滩</div></div>
+      <div class="day-body">
+        <div class="row"><div class="time"></div><div class="content"><a href="https://www.google.com/maps/dir/?api=1&destination=Duden%20Waterfalls%20Antalya" target="_blank" rel="noopener">杜登瀑布</a></div></div>
+        <div class="row"><div class="time"></div><div class="content"><a href="https://www.google.com/maps/dir/?api=1&destination=Konyaalti%20Beach%20Antalya" target="_blank" rel="noopener">孔亚阿提海滩 Konyaaltı Plajı</a></div></div>
+        <div class="row"><div class="time"></div><div class="content"><a href="https://www.google.com/maps/dir/?api=1&destination=Ataturk%20Kultur%20Parki%20Antalya" target="_blank" rel="noopener">Atatürk Parkı</a> → <a href="https://www.google.com/maps/dir/?api=1&destination=Kugulu%20Park%20Antalya" target="_blank" rel="noopener">Kuğulu Park</a> 一直走到 Konyaaltı Plajı Teras</div></div>
+        <div class="note">⚠️ 杜登瀑布和孔亚阿提海滩分处安塔利亚东西两侧,这天等于横穿全城,注意留出车程时间、按顺序走别来回折返。哪个杜登瀑布(市区内 Lara 下瀑布 / 城外上瀑布)还需要你确认。</div>
+      </div>
+    </div>
+
+    <div class="day card">
+      <div class="day-head"><div class="day-date">9/28 周一</div><div class="day-sub">返程</div></div>
+      <div class="day-body">
+        <div class="row"><div class="time"></div><div class="content">The Ninova Hotel 退房,视返程航班时间安排最后的采买/收拾</div></div>
+        <div class="note">返程航班信息还没收到,补上后这里会更新具体时间。</div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2 class="section-title">待办清单</h2>
+    <div class="card">
+      <ul class="plain">
+        <li>确认返程航班信息(安塔利亚/伊斯坦布尔 → 旧金山),发过来后补充到页面</li>
+        <li>预约地下水宫(Yerebatan Sarnıcı)在线门票,建议提前2-3天</li>
+        <li>预约多尔玛巴赫切宫(Dolmabahçe Sarayı)在线时段票</li>
+        <li>确认9/23是否真的要连续第二天飞热气球,还是当天只跟绿线团</li>
+        <li>确认9/27"杜登瀑布"具体指城外的上瀑布,还是市区 Lara 那个下瀑布</li>
+        <li>确认 Suluada 跳岛游是否已含酒店接送</li>
+        <li>如果博斯普鲁斯海峡游船有具体船票/公司信息,发过来补充时间地点</li>
+      </ul>
+    </div>
+  </section>
+
+  <section>
+    <h2 class="section-title">实用贴士</h2>
+    <div class="card tips-grid">
+      <div class="tip"><b>清真寺着装:</b>女生需要围巾遮头发,长裤/长裙、遮肩;进殿要脱鞋,自备一条丝巾比现场借用方便。</div>
+      <div class="tip"><b>礼拜时间:</b>圣索菲亚、蓝色清真寺等在使用中的清真寺,每天5次礼拜前后会短暂谢客,尤其周五中午最长,逛之前留意一下。</div>
+      <div class="tip"><b>货币:</b>土耳其里拉为主,景点门票、大额消费刷卡方便,小摊小店备一些现金。</div>
+      <div class="tip"><b>小费:</b>餐厅账单约10%,团/司机可另给现金小费。</div>
+      <div class="tip"><b>市内交通:</b>伊斯坦布尔地铁/电车/轮渡通用 Istanbulkart,机场就能买。</div>
+      <div class="tip"><b>插座电压:</b>欧标两脚圆孔(Type C/F),220V,记得带转换头。</div>
+      <div class="tip"><b>饮水:</b>自来水不建议直接喝,买瓶装水。</div>
+      <div class="tip"><b>卡帕多奇亚温差:</b>早晚温差大,飞热气球时段较冷,备一件外套。</div>
+      <div class="tip"><b>通讯:</b>建议落地后买当地实体卡或开通 eSIM/国际漫游。</div>
+    </div>
+  </section>
+
+</div>
+
+<footer>时间均已标注所在城市时区 · 出发地旧金山(UTC-7)· 土耳其全境(UTC+3)</footer>
+
+<script>
+(function(){
+  var events = [
+    {t:"2026-09-16T18:45:00-07:00", label:"TK80 旧金山起飞", where:"旧金山时间"},
+    {t:"2026-09-17T17:40:00+03:00", label:"抵达伊斯坦布尔", where:"伊斯坦布尔时间"},
+    {t:"2026-09-21T09:30:00+03:00", label:"最晚该出门去 SAW 机场了", where:"伊斯坦布尔时间"},
+    {t:"2026-09-21T12:30:00+03:00", label:"PC4028 起飞去卡帕多奇亚", where:"伊斯坦布尔时间"},
+    {t:"2026-09-24T18:10:00+03:00", label:"PC3505 起飞去安塔利亚", where:"伊斯坦布尔时间"}
+  ].map(function(e){ return {t:new Date(e.t), label:e.label, where:e.where}; });
+
+  function pad(n){ return String(n).padStart(2,'0'); }
+
+  function tick(){
+    var now = new Date();
+    var next = null;
+    for(var i=0;i<events.length;i++){
+      if(events[i].t.getTime() > now.getTime()){ next = events[i]; break; }
+    }
+    if(!next){
+      document.getElementById('focus-event').textContent = '行程已全部结束,祝旅途愉快 🎉';
+      document.getElementById('focus-when').textContent = '';
+      ['cd-d','cd-h','cd-m','cd-s'].forEach(function(id){ document.getElementById(id).textContent = '--'; });
+    } else {
+      var diff = next.t.getTime() - now.getTime();
+      var d = Math.floor(diff/86400000);
+      var h = Math.floor(diff%86400000/3600000);
+      var m = Math.floor(diff%3600000/60000);
+      var s = Math.floor(diff%60000/1000);
+      document.getElementById('focus-event').textContent = next.label;
+      document.getElementById('focus-when').textContent = next.where;
+      document.getElementById('cd-d').textContent = d;
+      document.getElementById('cd-h').textContent = pad(h);
+      document.getElementById('cd-m').textContent = pad(m);
+      document.getElementById('cd-s').textContent = pad(s);
+    }
+    try{
+      var sf = now.toLocaleTimeString('zh-CN', {timeZone:'America/Los_Angeles', hour:'2-digit', minute:'2-digit'});
+      var ist = now.toLocaleTimeString('zh-CN', {timeZone:'Europe/Istanbul', hour:'2-digit', minute:'2-digit'});
+      document.getElementById('now-line').textContent = '此刻 旧金山 ' + sf + ' · 土耳其 ' + ist;
+    }catch(e){}
+  }
+  tick();
+  setInterval(tick, 1000);
+
+  setInterval(function(){
+    try{
+      var h = new Date().toLocaleString('en-US', {timeZone:'Europe/Istanbul', hour12:false, hour:'2-digit'});
+      var hour = parseInt(h,10);
+      document.documentElement.setAttribute('data-theme', (hour>=7 && hour<19) ? 'day' : 'night');
+    }catch(e){}
+  }, 60000);
+})();
+</script>
 </body>
 </html>
