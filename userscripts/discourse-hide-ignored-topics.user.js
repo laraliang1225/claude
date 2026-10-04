@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Discourse 屏蔽增强：隐藏被屏蔽用户的主题 + 用户卡片屏蔽按钮
 // @namespace    https://github.com/laraliang1225/claude
-// @version      1.4.0
+// @version      1.5.0
 // @description  在主题列表中隐藏你已屏蔽（忽略）用户发的主题；在用户卡片上加一个“屏蔽 / 取消屏蔽”按钮，个人资料被隐藏的用户也能一键屏蔽。
 // @match        https://www.uscardforum.com/*
 // @grant        GM_getValue
@@ -89,6 +89,14 @@
 
   // ---------- 隐藏主题 ----------
 
+  const TOPIC_ROW_SELECTOR = [
+    'tr.topic-list-item',
+    '.topic-list-body > .topic-list-item',
+    '.latest-topic-list-item',
+    '.featured-topic',
+    '.category-boxes-topic',
+  ].join(',');
+
   // 主题 ID → 楼主用户名。楼主不会变，所以永久缓存，只保留最近 OP_CACHE_MAX 条。
   const OP_CACHE_MAX = 5000;
   const opCache = GM_getValue('opCache', {});
@@ -105,16 +113,38 @@
   }
 
   // 从主题列表 JSON 里批量记下楼主：posters 里标着“原始发帖人”的那个（一般是第一个）。
+  // 主题可能在 topic_list.topics，也可能嵌在 category_list 的各个分类（含子分类）里。
+  function collectTopics(data) {
+    const topics = [];
+    const add = (items) => { if (Array.isArray(items)) topics.push(...items); };
+    const addCategories = (cats) => {
+      if (!Array.isArray(cats)) return;
+      cats.forEach((c) => {
+        if (!c) return;
+        add(c.topics);
+        addCategories(c.subcategory_list);
+      });
+    };
+    add(data.topic_list && data.topic_list.topics);
+    add(data.category_list && data.category_list.topics);
+    addCategories(data.category_list && data.category_list.categories);
+    add(data.featured_topics);
+    return topics;
+  }
+
   function learnOps(data) {
-    const list = data && data.topic_list;
-    if (!list || !list.topics) return 0;
+    if (!data || typeof data !== 'object') return 0;
+    const topics = collectTopics(data);
+    if (!topics.length) return 0;
     const users = {};
+    const list = data.topic_list || {};
     (data.users || list.users || []).forEach((u) => { users[u.id] = u.username; });
     let n = 0;
-    list.topics.forEach((t) => {
+    topics.forEach((t) => {
       const posters = t.posters || [];
       const op = posters.find((p) => /原始|Original/i.test(p.description || '')) || posters[0];
-      const name = op && users[op.user_id];
+      const name = (op && (users[op.user_id] || op.username || (op.user && op.user.username)))
+        || (t.creator && t.creator.username);
       if (name) { opCache[t.id] = name; n++; }
     });
     saveOpCache();
@@ -136,7 +166,7 @@
   }
 
   function learnFromText(text) {
-    if (typeof text !== 'string' || text.indexOf('"topic_list"') === -1) return;
+    if (typeof text !== 'string' || !/"(topic_list|category_list|featured_topics)"/.test(text)) return;
     try { if (learnOps(JSON.parse(text))) scheduleScan(); } catch (e) { /* 不是 JSON */ }
   }
 
@@ -235,7 +265,7 @@
 
   function hideTopics() {
     const rows = document.querySelectorAll(
-      'tr.topic-list-item, .latest-topic-list-item, .topic-list-body > .topic-list-item'
+      TOPIC_ROW_SELECTOR
     );
     rows.forEach((row) => {
       const author = topicAuthor(row);
@@ -400,7 +430,7 @@
   GM_registerMenuCommand('诊断（排查用）', async () => {
     await refreshLists(true);
     const rows = document.querySelectorAll(
-      'tr.topic-list-item, .latest-topic-list-item, .topic-list-body > .topic-list-item'
+      TOPIC_ROW_SELECTOR
     );
     const lines = [
       `当前用户：${me || '（没读到，可能没登录或接口失败）'}`,
