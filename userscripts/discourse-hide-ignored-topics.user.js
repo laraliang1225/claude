@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Discourse 屏蔽增强：隐藏被屏蔽用户的主题 + 用户卡片屏蔽按钮
 // @namespace    https://github.com/laraliang1225/claude
-// @version      1.0.0
+// @version      1.1.0
 // @description  在主题列表中隐藏你已屏蔽（忽略）用户发的主题；在用户卡片上加一个“屏蔽 / 取消屏蔽”按钮，个人资料被隐藏的用户也能一键屏蔽。
 // @match        https://www.uscardforum.com/*
 // @grant        GM_getValue
@@ -253,6 +253,28 @@
   // 换页时（Discourse 是单页应用）顺便检查缓存是否过期
   window.addEventListener('popstate', () => refreshLists());
 
+  // 诊断：把脚本看到的东西列出来，方便排查为什么某个主题没被隐藏
+  GM_registerMenuCommand('诊断（排查用）', async () => {
+    await refreshLists(true);
+    const rows = document.querySelectorAll(
+      'tr.topic-list-item, .latest-topic-list-item, .topic-list-body > .topic-list-item'
+    );
+    const lines = [
+      `当前用户：${me || '（没读到，可能没登录或接口失败）'}`,
+      `已屏蔽 ${ignored.size} 人：${[...ignored].join(', ') || '（空）'}`,
+      `已禁言 ${muted.size} 人：${[...muted].join(', ') || '（空）'}`,
+      `本页找到主题行：${rows.length} 个，其中已隐藏 ${document.querySelectorAll('[data-block-hidden]').length} 个`,
+      '前 8 行识别出的楼主：',
+    ];
+    [...rows].slice(0, 8).forEach((row, i) => {
+      const title = (row.querySelector('.title, .raw-topic-link, a[href*="/t/"]') || {}).textContent || '';
+      lines.push(`${i + 1}. ${topicAuthor(row) || '（没识别出）'} — ${title.trim().slice(0, 30)}`);
+    });
+    console.log('[屏蔽增强] 诊断\n' + lines.join('\n'));
+    if (rows[0]) console.log('[屏蔽增强] 第一行 HTML：', rows[0].outerHTML);
+    alert(lines.join('\n'));
+  });
+
   scan();
-  refreshLists();
+  refreshLists(true); // 每次打开页面都重新拉一次，避免在论坛设置里改了名单后缓存没更新
 })();
