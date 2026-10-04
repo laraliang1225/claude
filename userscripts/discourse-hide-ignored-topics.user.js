@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         美卡论坛屏蔽增强：首页右栏隐藏被屏蔽用户的主题 + 用户卡片屏蔽按钮
 // @namespace    https://github.com/laraliang1225/claude
-// @version      3.0.1
+// @version      3.0.2
 // @description  论坛自己会在普通主题列表里隐藏被屏蔽用户的主题，但首页“类别 + 最新”右栏漏掉了，这个脚本补上；另外在用户卡片上加“屏蔽 / 取消屏蔽”按钮。
 // @match        https://www.uscardforum.com/*
 // @grant        unsafeWindow
@@ -41,7 +41,10 @@
   }
 
   // 首次打开：首屏数据和当前用户（含屏蔽名单）都嵌在 #data-preloaded 里，不用额外请求
+  let preloadedRead = false;
   function readPreloaded(el) {
+    if (preloadedRead) return;
+    preloadedRead = true;
     const pre = JSON.parse(el.dataset.preloaded);
     if (pre.currentUser) {
       const user = JSON.parse(pre.currentUser);
@@ -137,7 +140,10 @@
     }
   }
 
-  document.addEventListener('DOMContentLoaded', () => {
+  // 油猴不保证在 document-start 注入（比如刚重新启用脚本时），所以页面已经加载完也要能直接启动
+  function start() {
+    const el = document.getElementById('data-preloaded');
+    if (el) { watcher.disconnect(); readPreloaded(el); }
     let queued = false;
     new MutationObserver(() => {
       if (queued) return;
@@ -145,5 +151,8 @@
       requestAnimationFrame(() => { queued = false; addCardButton(); });
     // 换一个人的卡片时 Discourse 可能只改 #user-card 的 class，所以也要监听 class 变化
     }).observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['class'] });
-  });
+    addCardButton();
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start);
+  else start();
 })();
