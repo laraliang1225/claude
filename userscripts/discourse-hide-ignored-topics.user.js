@@ -1,12 +1,13 @@
 // ==UserScript==
 // @name         Discourse 屏蔽增强：隐藏被屏蔽用户的主题 + 用户卡片屏蔽按钮
 // @namespace    https://github.com/laraliang1225/claude
-// @version      2.0.0
+// @version      2.1.0
 // @description  在主题列表中隐藏你已屏蔽（忽略）用户发的主题；在用户卡片上加一个“屏蔽 / 取消屏蔽”按钮，个人资料被隐藏的用户也能一键屏蔽。
 // @match        https://www.uscardforum.com/*
 // @grant        GM_getValue
 // @grant        GM_setValue
 // @grant        GM_registerMenuCommand
+// @grant        GM_unregisterMenuCommand
 // @grant        unsafeWindow
 // @run-at       document-start
 // @noframes
@@ -32,12 +33,12 @@
   let me = GM_getValue('me', '');
   let ignored = new Set(GM_getValue('ignored', []));
   let muted = new Set(GM_getValue('muted', []));
-  let hideMuted = GM_getValue('hideMuted', true);
+  let enabled = GM_getValue('enabled', true); // 总开关：是否隐藏被屏蔽用户的主题
   const opByTopic = new Map(); // 主题 ID → 楼主用户名（小写），只放内存
 
   function isBlocked(username) {
     const u = norm(username);
-    return !!u && (ignored.has(u) || (hideMuted && muted.has(u)));
+    return enabled && !!u && (ignored.has(u) || muted.has(u));
   }
 
   function saveLists() {
@@ -387,23 +388,31 @@
   else start();
 
   // ---------- 菜单 ----------
+  // 开关切换后重新注册菜单，让菜单上的“开/关”文字马上更新。
 
-  GM_registerMenuCommand('刷新屏蔽名单', async () => {
-    await refreshLists(true);
-    alert(`已屏蔽 ${ignored.size} 人，已禁言 ${muted.size} 人。`);
-  });
+  let menuIds = [];
+  function registerMenus() {
+    if (typeof GM_unregisterMenuCommand === 'function') menuIds.forEach((id) => GM_unregisterMenuCommand(id));
+    menuIds = [
+      GM_registerMenuCommand(`隐藏被屏蔽用户的主题：${enabled ? '开' : '关'}（点击切换）`, () => {
+        enabled = !enabled;
+        GM_setValue('enabled', enabled);
+        updateStyle(); // 立即生效，不用刷新
+        registerMenus();
+      }),
+      GM_registerMenuCommand('刷新屏蔽名单', async () => {
+        await refreshLists(true);
+        alert(`已屏蔽 ${ignored.size} 人，已禁言 ${muted.size} 人。`);
+      }),
+      GM_registerMenuCommand('诊断（排查用）', diagnose),
+    ];
+  }
 
-  GM_registerMenuCommand(`同时隐藏“禁言”用户的主题：${hideMuted ? '开' : '关'}（点击切换）`, () => {
-    hideMuted = !hideMuted;
-    GM_setValue('hideMuted', hideMuted);
-    scheduleStyle();
-    alert(`已${hideMuted ? '开启' : '关闭'}，刷新页面后菜单文字会更新。`);
-  });
-
-  GM_registerMenuCommand('诊断（排查用）', () => {
+  function diagnose() {
     const rows = [...document.querySelectorAll(ROW_SELECTOR)];
     const lines = [
       `当前用户：${me || '（没读到）'}`,
+      `隐藏开关：${enabled ? '开' : '关'}`,
       `已屏蔽 ${ignored.size} 人，已禁言 ${muted.size} 人`,
       `已知楼主的主题：${opByTopic.size} 个；等待逐个查询：${fallbackQueue.length} 个`,
       `本页主题行：${rows.length} 个，其中被隐藏 ${rows.filter((r) => getComputedStyle(r).display === 'none').length} 个`,
@@ -416,5 +425,7 @@
     ];
     console.log('[屏蔽增强] 诊断\n' + lines.join('\n'));
     alert(lines.join('\n'));
-  });
+  }
+
+  registerMenus();
 })();
