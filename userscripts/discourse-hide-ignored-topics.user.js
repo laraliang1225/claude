@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         美卡论坛屏蔽增强：首页右栏隐藏被屏蔽用户的主题 + 用户卡片屏蔽按钮
 // @namespace    https://github.com/laraliang1225/claude
-// @version      3.0.2
+// @version      3.0.3
 // @description  论坛自己会在普通主题列表里隐藏被屏蔽用户的主题，但首页“类别 + 最新”右栏漏掉了，这个脚本补上；另外在用户卡片上加“屏蔽 / 取消屏蔽”按钮。
 // @match        https://www.uscardforum.com/*
 // @grant        unsafeWindow
@@ -40,22 +40,26 @@
     updateStyle();
   }
 
-  // 首次打开：首屏数据和当前用户（含屏蔽名单）都嵌在 #data-preloaded 里，不用额外请求
+  // 首次打开：首屏数据和当前用户（含屏蔽名单）都嵌在 #data-preloaded 里，不用额外请求。
+  // 新版 Discourse 是 <script type="application/json" id="data-preloaded">，数据在文本内容里；
+  // 旧版放在 data-preloaded 属性里。页面还在加载时文本可能不完整，解析失败就返回 false 等下次再读。
   let preloadedRead = false;
   function readPreloaded(el) {
-    if (preloadedRead) return;
+    if (preloadedRead) return true;
+    let pre;
+    try { pre = JSON.parse(el.dataset.preloaded || el.textContent); } catch (e) { return false; }
     preloadedRead = true;
-    const pre = JSON.parse(el.dataset.preloaded);
     if (pre.currentUser) {
       const user = JSON.parse(pre.currentUser);
       me = user.username;
       ignored = new Set((user.ignored_users || []).map(norm));
     }
     if (pre.topic_list) learn(JSON.parse(pre.topic_list));
+    return true;
   }
   const watcher = new MutationObserver(() => {
     const el = document.getElementById('data-preloaded');
-    if (el) { watcher.disconnect(); readPreloaded(el); }
+    if (el && readPreloaded(el)) watcher.disconnect();
   });
   watcher.observe(document, { childList: true, subtree: true });
 
@@ -143,7 +147,8 @@
   // 油猴不保证在 document-start 注入（比如刚重新启用脚本时），所以页面已经加载完也要能直接启动
   function start() {
     const el = document.getElementById('data-preloaded');
-    if (el) { watcher.disconnect(); readPreloaded(el); }
+    watcher.disconnect();
+    if (el && !readPreloaded(el)) console.warn('[屏蔽增强] 读不到 #data-preloaded 的数据');
     let queued = false;
     new MutationObserver(() => {
       if (queued) return;
