@@ -1,0 +1,258 @@
+// ==UserScript==
+// @name         Discourse 屏蔽增强：隐藏被屏蔽用户的主题 + 用户卡片屏蔽按钮
+// @namespace    https://github.com/laraliang1225/claude
+// @version      1.0.0
+// @description  在主题列表中隐藏你已屏蔽（忽略）用户发的主题；在用户卡片上加一个“屏蔽 / 取消屏蔽”按钮，个人资料被隐藏的用户也能一键屏蔽。
+// @match        https://www.uscardforum.com/*
+// @grant        GM_getValue
+// @grant        GM_setValue
+// @grant        GM_registerMenuCommand
+// @run-at       document-idle
+// ==/UserScript==
+
+(function () {
+  'use strict';
+
+  // 屏蔽时长。Discourse 的“忽略”必须带过期时间，这里设成 100 年，相当于永久。
+  const IGNORE_YEARS = 100;
+  // 缓存多久后重新从服务器拉取屏蔽列表（毫秒）。
+  const CACHE_TTL = 10 * 60 * 1000;
+
+  const settings = {
+    get hideMuted() { return GM_getValue('hideMuted', true); },
+    set hideMuted(v) { GM_setValue('hideMuted', v); },
+  };
+
+  let me = GM_getValue('me', null);
+  let ignored = new Set(GM_getValue('ignored', []));
+  let muted = new Set(GM_getValue('muted', []));
+
+  const norm = (name) => (name || '').trim().toLowerCase();
+
+  function isBlocked(username) {
+    const u = norm(username);
+    if (!u) return false;
+    return ignored.has(u) || (settings.hideMuted && muted.has(u));
+  }
+
+  function saveCache() {
+    GM_setValue('me', me);
+    GM_setValue('ignored', [...ignored]);
+    GM_setValue('muted', [...muted]);
+    GM_setValue('fetchedAt', Date.now());
+  }
+
+  function csrfToken() {
+    const meta = document.querySelector('meta[name="csrf-token"]');
+    return meta ? meta.content : '';
+  }
+
+  async function api(path, options = {}) {
+    const res = await fetch(path, {
+      credentials: 'same-origin',
+      ...options,
+      headers: {
+        Accept: 'application/json',
+        'X-Requested-With': 'XMLHttpRequest',
+        'X-CSRF-Token': csrfToken(),
+        ...(options.headers || {}),
+      },
+    });
+    let data = null;
+    try { data = await res.json(); } catch (e) { /* 非 JSON 响应 */ }
+    if (!res.ok) {
+      const msg = (data && (data.errors || []).join('\n')) || `HTTP ${res.status}`;
+      throw new Error(msg);
+    }
+    return data;
+  }
+
+  async function refreshLists(force = false) {
+    const fetchedAt = GM_getValue('fetchedAt', 0);
+    if (!force && me && Date.now() - fetchedAt < CACHE_TTL) return;
+    try {
+      const session = await api('/session/current.json');
+      const username = session && session.current_user && session.current_user.username;
+      if (!username) return; // 未登录
+      me = username;
+      const data = await api(`/u/${encodeURIComponent(username)}.json`);
+      const user = (data && data.user) || {};
+      ignored = new Set((user.ignored_usernames || []).map(norm));
+      muted = new Set((user.muted_usernames || []).map(norm));
+      saveCache();
+      scan();
+    } catch (e) {
+      console.warn('[屏蔽增强] 拉取屏蔽列表失败：', e);
+    }
+  }
+
+  // ---------- 隐藏主题 ----------
+
+  // 主题列表里 posters 列第一个头像是楼主；找不到 posters 列时退回到行内第一个用户链接。
+  function topicAuthor(row) {
+    const el = row.querySelector('.posters [data-user-card], .posters a[href*="/u/"]')
+      || row.querySelector('[data-user-card]');
+    if (!el) return null;
+    if (el.dataset.userCard) return el.dataset.userCard;
+    const m = (el.getAttribute('href') || '').match(/\/u\/([^/?#]+)/);
+    return m ? decodeURIComponent(m[1]) : null;
+  }
+
+  function hideTopics() {
+    const rows = document.querySelectorAll(
+      'tr.topic-list-item, .latest-topic-list-item, .topic-list-body > .topic-list-item'
+    );
+    rows.forEach((row) => {
+      const author = topicAuthor(row);
+      const hide = isBlocked(author);
+      if (hide && !row.dataset.blockHidden) {
+        row.dataset.blockHidden = '1';
+        row.style.display = 'none';
+      } else if (!hide && row.dataset.blockHidden) {
+        delete row.dataset.blockHidden;
+        row.style.display = '';
+      }
+    });
+  }
+
+  // ---------- 用户卡片屏蔽按钮 ----------
+
+  function cardUsername(card) {
+    const link = card.querySelector('a.user-profile-link, .names a[href*="/u/"], a[href*="/u/"]');
+    if (link) {
+      const m = (link.getAttribute('href') || '').match(/\/u\/([^/?#]+)/);
+      if (m) return decodeURIComponent(m[1]);
+    }
+    for (const cls of card.classList) {
+      const m = cls.match(/^user-card-(.+)$/);
+      if (m) return m[1];
+    }
+    return null;
+  }
+
+  function farFuture() {
+    const d = new Date();
+    d.setFullYear(d.getFullYear() + IGNORE_YEARS);
+    return d.toISOString();
+  }
+
+  async function setIgnore(username, ignore) {
+    const body = new URLSearchParams();
+    body.set('notification_level', ignore ? 'ignore' : 'normal');
+    if (ignore) body.set('expiring_at', farFuture());
+    await api(`/u/${encodeURIComponent(username)}/notification_level.json`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8' },
+      body: body.toString(),
+    });
+    const u = norm(username);
+    if (ignore) {
+      ignored.add(u);
+    } else {
+      ignored.delete(u);
+      muted.delete(u); // 设为 normal 会同时解除禁言
+    }
+    saveCache();
+    scan();
+  }
+
+  function renderButton(btn, username) {
+    const blocked = ignored.has(norm(username));
+    btn.textContent = blocked ? '取消屏蔽' : '屏蔽';
+    btn.className = blocked ? 'btn btn-default block-helper-btn' : 'btn btn-danger block-helper-btn';
+  }
+
+  function addCardButton(card) {
+    const username = cardUsername(card);
+    if (!username || norm(username) === norm(me)) return;
+
+    const existing = card.querySelector('.block-helper-btn');
+    if (existing) {
+      if (existing.dataset.username !== username) {
+        existing.dataset.username = username;
+        renderButton(existing, username);
+      }
+      return;
+    }
+
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.dataset.username = username;
+    btn.style.width = '100%';
+    renderButton(btn, username);
+
+    btn.addEventListener('click', async (ev) => {
+      ev.preventDefault();
+      ev.stopPropagation();
+      const name = btn.dataset.username;
+      const blocked = ignored.has(norm(name));
+      const question = blocked
+        ? `取消屏蔽 ${name}？`
+        : `屏蔽 ${name}？\n屏蔽后他的帖子会被折叠，他发的主题也会从列表中隐藏。`;
+      if (!confirm(question)) return;
+      btn.disabled = true;
+      try {
+        await setIgnore(name, !blocked);
+        renderButton(btn, name);
+      } catch (e) {
+        alert(`操作失败：${e.message}`);
+      } finally {
+        btn.disabled = false;
+      }
+    });
+
+    const controls = card.querySelector('.usercard-controls');
+    if (controls) {
+      const li = document.createElement(controls.tagName === 'UL' ? 'li' : 'div');
+      li.appendChild(btn);
+      controls.appendChild(li);
+    } else {
+      (card.querySelector('.card-content') || card).appendChild(btn);
+    }
+  }
+
+  function addCardButtons() {
+    document.querySelectorAll('#user-card, .user-card').forEach((card) => {
+      // .user-card 可能嵌套在 #user-card 里，只处理最外层
+      if (card.parentElement && card.parentElement.closest('#user-card, .user-card')) return;
+      addCardButton(card);
+    });
+  }
+
+  // ---------- 主循环 ----------
+
+  function scan() {
+    hideTopics();
+    addCardButtons();
+  }
+
+  let pending = false;
+  const observer = new MutationObserver(() => {
+    if (pending) return;
+    pending = true;
+    requestAnimationFrame(() => {
+      pending = false;
+      scan();
+    });
+  });
+  observer.observe(document.body, { childList: true, subtree: true });
+
+  GM_registerMenuCommand('刷新屏蔽列表', async () => {
+    await refreshLists(true);
+    alert(`已屏蔽 ${ignored.size} 人，已禁言 ${muted.size} 人。`);
+  });
+  GM_registerMenuCommand(
+    `同时隐藏“禁言”用户的主题：${settings.hideMuted ? '开' : '关'}（点击切换）`,
+    () => {
+      settings.hideMuted = !settings.hideMuted;
+      alert(`已${settings.hideMuted ? '开启' : '关闭'}，刷新页面后菜单文字会更新。`);
+      scan();
+    }
+  );
+
+  // 换页时（Discourse 是单页应用）顺便检查缓存是否过期
+  window.addEventListener('popstate', () => refreshLists());
+
+  scan();
+  refreshLists();
+})();
