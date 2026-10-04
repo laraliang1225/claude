@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Discourse 屏蔽增强：隐藏被屏蔽用户的主题 + 用户卡片屏蔽按钮
 // @namespace    https://github.com/laraliang1225/claude
-// @version      1.2.0
+// @version      1.3.0
 // @description  在主题列表中隐藏你已屏蔽（忽略）用户发的主题；在用户卡片上加一个“屏蔽 / 取消屏蔽”按钮，个人资料被隐藏的用户也能一键屏蔽。
 // @match        https://www.uscardforum.com/*
 // @grant        GM_getValue
@@ -103,26 +103,72 @@
     GM_setValue('opCache', opCache);
   }
 
-  // 通过 /posts/by_number/{主题ID}/1.json 拿 1 楼作者，不会增加帖子浏览量。
-  function pumpOpQueue() {
-    while (opActive < 3 && opQueue.length) {
-      const id = opQueue.shift();
-      opActive++;
-      api(`/posts/by_number/${id}/1.json`)
-        .then((post) => { opCache[id] = (post && post.username) || ''; })
-        .catch((e) => {
-          // 404/403 说明 1 楼被删或没权限，记成空，别反复请求
-          if (/HTTP 40[34]/.test(e.message)) opCache[id] = '';
-          else console.warn(`[屏蔽增强] 获取主题 ${id} 的楼主失败：`, e);
-        })
-        .finally(() => {
-          opActive--;
-          opQueued.delete(id);
-          saveOpCache();
-          scheduleScan();
-          pumpOpQueue();
-        });
+  // 从主题列表 JSON 里批量记下楼主：posters 里标着“原始发帖人”的那个（一般是第一个）。
+  function learnOps(data) {
+    const list = data && data.topic_list;
+    if (!list || !list.topics) return 0;
+    const users = {};
+    (data.users || list.users || []).forEach((u) => { users[u.id] = u.username; });
+    let n = 0;
+    list.topics.forEach((t) => {
+      const posters = t.posters || [];
+      const op = posters.find((p) => /原始|Original/i.test(p.description || '')) || posters[0];
+      const name = op && users[op.user_id];
+      if (name) { opCache[t.id] = name; n++; }
+    });
+    saveOpCache();
+    return n;
+  }
+
+  // 首页“类别 + 最新”自己用的接口，一个请求拿到右栏所有主题的楼主。
+  let batchLoaded = false;
+  async function loadOpsBatch() {
+    if (batchLoaded) return;
+    batchLoaded = true;
+    try {
+      learnOps(await api('/categories_and_latest.json'));
+    } catch (e) {
+      console.warn('[屏蔽增强] 批量获取楼主失败，改为逐个查询：', e);
     }
+    scheduleScan();
+    pumpOpQueue();
+  }
+
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+  // 批量没覆盖到的主题（比如往下加载出来的）再逐个查 1 楼作者。
+  // 论坛有限流，所以一次只发一个、每个之间隔一会；遇到 429 就按服务器给的时间等待后重试。
+  async function pumpOpQueue() {
+    if (opActive || !batchLoaded) return;
+    opActive = 1;
+    while (opQueue.length) {
+      const id = opQueue[0];
+      if (id in opCache) { opQueue.shift(); opQueued.delete(id); continue; }
+      try {
+        const res = await fetch(`/posts/by_number/${id}/1.json`, {
+          credentials: 'same-origin',
+          headers: { Accept: 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
+        });
+        if (res.status === 429) {
+          const wait = parseInt(res.headers.get('Retry-After'), 10);
+          await sleep((wait > 0 ? wait : 15) * 1000);
+          continue; // 重试同一个
+        }
+        const post = res.ok ? await res.json().catch(() => null) : null;
+        // 404/403 等说明 1 楼被删或没权限，记成空，别反复请求
+        opCache[id] = (post && post.username) || '';
+        saveOpCache();
+        scheduleScan();
+      } catch (e) {
+        console.warn(`[屏蔽增强] 获取主题 ${id} 的楼主失败：`, e);
+        await sleep(5000);
+        continue;
+      }
+      opQueue.shift();
+      opQueued.delete(id);
+      await sleep(800);
+    }
+    opActive = 0;
   }
 
   function topicId(row) {
@@ -147,7 +193,8 @@
     if (!opQueued.has(id)) {
       opQueued.add(id);
       opQueue.push(id);
-      pumpOpQueue();
+      if (batchLoaded) pumpOpQueue();
+      else loadOpsBatch();
     }
     return null;
   }
