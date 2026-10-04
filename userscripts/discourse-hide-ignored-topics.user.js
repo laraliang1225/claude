@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Discourse 屏蔽增强：隐藏被屏蔽用户的主题 + 用户卡片屏蔽按钮
 // @namespace    https://github.com/laraliang1225/claude
-// @version      1.1.0
+// @version      1.2.0
 // @description  在主题列表中隐藏你已屏蔽（忽略）用户发的主题；在用户卡片上加一个“屏蔽 / 取消屏蔽”按钮，个人资料被隐藏的用户也能一键屏蔽。
 // @match        https://www.uscardforum.com/*
 // @grant        GM_getValue
@@ -88,14 +88,68 @@
 
   // ---------- 隐藏主题 ----------
 
-  // 主题列表里 posters 列第一个头像是楼主；找不到 posters 列时退回到行内第一个用户链接。
+  // 主题 ID → 楼主用户名。楼主不会变，所以永久缓存，只保留最近 OP_CACHE_MAX 条。
+  const OP_CACHE_MAX = 5000;
+  const opCache = GM_getValue('opCache', {});
+  const opQueue = [];
+  const opQueued = new Set();
+  let opActive = 0;
+
+  function saveOpCache() {
+    const keys = Object.keys(opCache);
+    if (keys.length > OP_CACHE_MAX) {
+      keys.slice(0, keys.length - OP_CACHE_MAX).forEach((k) => delete opCache[k]);
+    }
+    GM_setValue('opCache', opCache);
+  }
+
+  // 通过 /posts/by_number/{主题ID}/1.json 拿 1 楼作者，不会增加帖子浏览量。
+  function pumpOpQueue() {
+    while (opActive < 3 && opQueue.length) {
+      const id = opQueue.shift();
+      opActive++;
+      api(`/posts/by_number/${id}/1.json`)
+        .then((post) => { opCache[id] = (post && post.username) || ''; })
+        .catch((e) => {
+          // 404/403 说明 1 楼被删或没权限，记成空，别反复请求
+          if (/HTTP 40[34]/.test(e.message)) opCache[id] = '';
+          else console.warn(`[屏蔽增强] 获取主题 ${id} 的楼主失败：`, e);
+        })
+        .finally(() => {
+          opActive--;
+          opQueued.delete(id);
+          saveOpCache();
+          scheduleScan();
+          pumpOpQueue();
+        });
+    }
+  }
+
+  function topicId(row) {
+    if (row.dataset.topicId) return row.dataset.topicId;
+    const link = row.querySelector('a[href*="/t/"]');
+    const m = link && (link.getAttribute('href') || '').match(/\/t\/(?:[^/]+\/)?(\d+)/);
+    return m ? m[1] : null;
+  }
+
+  // 普通主题列表（最新/新/分类页）的 posters 列第一个头像就是楼主。
+  // 首页“类别 + 最新”布局右侧那一栏只显示最后回复人的头像，楼主要按主题 ID 去查。
   function topicAuthor(row) {
-    const el = row.querySelector('.posters [data-user-card], .posters a[href*="/u/"]')
-      || row.querySelector('[data-user-card]');
-    if (!el) return null;
-    if (el.dataset.userCard) return el.dataset.userCard;
-    const m = (el.getAttribute('href') || '').match(/\/u\/([^/?#]+)/);
-    return m ? decodeURIComponent(m[1]) : null;
+    const el = row.querySelector('.posters [data-user-card], .posters a[href*="/u/"]');
+    if (el) {
+      if (el.dataset.userCard) return el.dataset.userCard;
+      const m = (el.getAttribute('href') || '').match(/\/u\/([^/?#]+)/);
+      if (m) return decodeURIComponent(m[1]);
+    }
+    const id = topicId(row);
+    if (!id) return null;
+    if (id in opCache) return opCache[id] || null;
+    if (!opQueued.has(id)) {
+      opQueued.add(id);
+      opQueue.push(id);
+      pumpOpQueue();
+    }
+    return null;
   }
 
   function hideTopics() {
@@ -227,14 +281,15 @@
   }
 
   let pending = false;
-  const observer = new MutationObserver(() => {
+  function scheduleScan() {
     if (pending) return;
     pending = true;
     requestAnimationFrame(() => {
       pending = false;
       scan();
     });
-  });
+  }
+  const observer = new MutationObserver(scheduleScan);
   observer.observe(document.body, { childList: true, subtree: true });
 
   GM_registerMenuCommand('刷新屏蔽列表', async () => {
