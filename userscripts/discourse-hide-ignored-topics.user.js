@@ -1,13 +1,14 @@
 // ==UserScript==
 // @name         Discourse 屏蔽增强：隐藏被屏蔽用户的主题 + 用户卡片屏蔽按钮
 // @namespace    https://github.com/laraliang1225/claude
-// @version      1.3.0
+// @version      1.4.0
 // @description  在主题列表中隐藏你已屏蔽（忽略）用户发的主题；在用户卡片上加一个“屏蔽 / 取消屏蔽”按钮，个人资料被隐藏的用户也能一键屏蔽。
 // @match        https://www.uscardforum.com/*
 // @grant        GM_getValue
 // @grant        GM_setValue
 // @grant        GM_registerMenuCommand
-// @run-at       document-idle
+// @grant        unsafeWindow
+// @run-at       document-start
 // ==/UserScript==
 
 (function () {
@@ -120,27 +121,61 @@
     return n;
   }
 
-  // 首页“类别 + 最新”自己用的接口，一个请求拿到右栏所有主题的楼主。
-  let batchLoaded = false;
-  async function loadOpsBatch() {
-    if (batchLoaded) return;
-    batchLoaded = true;
+  // 楼主信息直接从页面自己已经加载的数据里读，不额外发请求：
+  // 1. 第一次打开页面时，Discourse 把首屏数据嵌在 #data-preloaded 里；
+  // 2. 站内跳转、加载更多时，拦截论坛自己的 XHR / fetch 响应。
+  function readPreloaded(el) {
     try {
-      learnOps(await api('/categories_and_latest.json'));
+      const obj = JSON.parse(el.dataset.preloaded);
+      Object.values(obj).forEach((v) => {
+        try { learnOps(typeof v === 'string' ? JSON.parse(v) : v); } catch (e) { /* 不是 JSON */ }
+      });
     } catch (e) {
-      console.warn('[屏蔽增强] 批量获取楼主失败，改为逐个查询：', e);
+      console.warn('[屏蔽增强] 读取预加载数据失败：', e);
     }
-    scheduleScan();
-    pumpOpQueue();
   }
+
+  function learnFromText(text) {
+    if (typeof text !== 'string' || text.indexOf('"topic_list"') === -1) return;
+    try { if (learnOps(JSON.parse(text))) scheduleScan(); } catch (e) { /* 不是 JSON */ }
+  }
+
+  const W = typeof unsafeWindow !== 'undefined' ? unsafeWindow : window;
+
+  const origSend = W.XMLHttpRequest.prototype.send;
+  W.XMLHttpRequest.prototype.send = function (...args) {
+    this.addEventListener('load', () => {
+      try {
+        if (this.responseType === 'json') {
+          if (this.response && learnOps(this.response)) scheduleScan();
+        } else if (this.responseType === '' || this.responseType === 'text') {
+          learnFromText(this.responseText);
+        }
+      } catch (e) { /* 忽略 */ }
+    });
+    return origSend.apply(this, args);
+  };
+
+  const origFetch = W.fetch;
+  W.fetch = function (...args) {
+    const promise = origFetch.apply(this, args);
+    promise.then((res) => {
+      if ((res.headers.get('content-type') || '').includes('json')) {
+        res.clone().text().then(learnFromText).catch(() => {});
+      }
+    }).catch(() => {});
+    return promise;
+  };
 
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-  // 批量没覆盖到的主题（比如往下加载出来的）再逐个查 1 楼作者。
-  // 论坛有限流，所以一次只发一个、每个之间隔一会；遇到 429 就按服务器给的时间等待后重试。
+  // 兜底：页面数据里没找到楼主的主题，再逐个查 1 楼作者。
+  // 先等 2 秒让上面的拦截把数据填进来；论坛有限流，所以一次只发一个、每个之间隔一会，
+  // 遇到 429 就按服务器给的时间等待后重试。
   async function pumpOpQueue() {
-    if (opActive || !batchLoaded) return;
+    if (opActive) return;
     opActive = 1;
+    await sleep(2000);
     while (opQueue.length) {
       const id = opQueue[0];
       if (id in opCache) { opQueue.shift(); opQueued.delete(id); continue; }
@@ -193,8 +228,7 @@
     if (!opQueued.has(id)) {
       opQueued.add(id);
       opQueue.push(id);
-      if (batchLoaded) pumpOpQueue();
-      else loadOpsBatch();
+      pumpOpQueue();
     }
     return null;
   }
@@ -336,8 +370,15 @@
       scan();
     });
   }
-  const observer = new MutationObserver(scheduleScan);
-  observer.observe(document.body, { childList: true, subtree: true });
+  // 脚本在 document-start 运行，好赶在论坛启动前装上拦截、读到预加载数据。
+  const preloadWatcher = new MutationObserver(() => {
+    const el = document.getElementById('data-preloaded');
+    if (el) {
+      preloadWatcher.disconnect();
+      readPreloaded(el);
+    }
+  });
+  preloadWatcher.observe(document, { childList: true, subtree: true });
 
   GM_registerMenuCommand('刷新屏蔽列表', async () => {
     await refreshLists(true);
@@ -377,6 +418,13 @@
     alert(lines.join('\n'));
   });
 
-  scan();
-  refreshLists(true); // 每次打开页面都重新拉一次，避免在论坛设置里改了名单后缓存没更新
+  function start() {
+    const el = document.getElementById('data-preloaded');
+    if (el) { preloadWatcher.disconnect(); readPreloaded(el); }
+    new MutationObserver(scheduleScan).observe(document.body, { childList: true, subtree: true });
+    scan();
+    refreshLists(true); // 每次打开页面都重新拉一次，避免在论坛设置里改了名单后缓存没更新
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start);
+  else start();
 })();
