@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         美卡论坛屏蔽增强：首页右栏隐藏被屏蔽用户的主题 + 用户卡片屏蔽按钮
 // @namespace    https://github.com/laraliang1225/claude
-// @version      3.0.0
+// @version      3.0.1
 // @description  论坛自己会在普通主题列表里隐藏被屏蔽用户的主题，但首页“类别 + 最新”右栏漏掉了，这个脚本补上；另外在用户卡片上加“屏蔽 / 取消屏蔽”按钮。
 // @match        https://www.uscardforum.com/*
 // @grant        unsafeWindow
@@ -92,8 +92,9 @@
 
   function render(btn) {
     const blocked = ignored.has(norm(btn.dataset.username));
-    btn.textContent = blocked ? '取消屏蔽' : '屏蔽';
-    btn.className = `btn ${blocked ? 'btn-default' : 'btn-danger'} block-helper-btn`;
+    // 和 Discourse 自带按钮同样的结构（文字放在 .d-button-label 里），样式才会一致
+    btn.className = `btn btn-text ${blocked ? 'btn-default' : 'btn-danger'} block-helper-btn`;
+    btn.innerHTML = `<span class="d-button-label">${blocked ? '取消屏蔽' : '屏蔽'}</span>`;
   }
 
   async function onClick(ev) {
@@ -125,7 +126,6 @@
     if (!btn) {
       btn = document.createElement('button');
       btn.type = 'button';
-      btn.style.width = '100%';
       btn.addEventListener('click', onClick);
       const controls = card.querySelector('.usercard-controls');
       if (controls) controls.appendChild(document.createElement(controls.tagName === 'UL' ? 'li' : 'div')).appendChild(btn);
