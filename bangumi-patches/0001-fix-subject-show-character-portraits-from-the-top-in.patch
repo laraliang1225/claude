@@ -1,0 +1,144 @@
+From ccd615066fc51418cb9f7b793edd59db796fe74d Mon Sep 17 00:00:00 2001
+From: laraliang1225 <smalllicheng@gmail.com>
+Date: Sun, 4 Oct 2026 04:53:54 +0000
+Subject: [PATCH] fix(subject): show character portraits from the top instead
+ of a center crop
+
+The `grid` image is a 100x100 square that the backend center-crops
+(`/r/100x100/`). Character portraits are usually full-body, so the square
+only shows the waist and legs, and the 3:4 cover then crops it again.
+
+Use the `medium` image (width-limited, original aspect ratio) and crop it
+from the top with CSS, matching the legacy site. Falls back to `grid`
+when `medium` is missing.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01JUFGFXc68QQGjEYNk7Y9E1
+Signed-off-by: laraliang1225 <smalllicheng@gmail.com>
+---
+ .../index/subject/[id]/SubjectCharacters.spec.tsx     |  6 ++++++
+ .../pages/index/subject/[id]/SubjectDetail.spec.tsx   |  5 ++++-
+ .../subject/[id]/components/SubjectCharacters.tsx     |  7 ++++---
+ .../subject/[id]/components/SubjectDetailBlocks.tsx   |  4 ++--
+ .../index/subject/[id]/components/subject-common.ts   | 11 +++++++++++
+ 5 files changed, 27 insertions(+), 6 deletions(-)
+
+diff --git a/packages/website/src/pages/index/subject/[id]/SubjectCharacters.spec.tsx b/packages/website/src/pages/index/subject/[id]/SubjectCharacters.spec.tsx
+index 8ecfd81..72977a7 100644
+--- a/packages/website/src/pages/index/subject/[id]/SubjectCharacters.spec.tsx
++++ b/packages/website/src/pages/index/subject/[id]/SubjectCharacters.spec.tsx
+@@ -39,6 +39,12 @@ describe('SubjectCharacters', () => {
+     expect(screen.getByText('CV:')).toBeInTheDocument();
+     expect(screen.getByText('中文配音:')).toBeInTheDocument();
+ 
++    // 头像使用保留原始比例的 medium 图并从顶部裁剪
++    expect(document.querySelector('img[src$="/crt/g/00/00/05.jpg"]')).not.toBeInTheDocument();
++    expect(document.querySelector('img[src$="/crt/m/00/00/05.jpg"]')).toHaveClass(
++      'obj-p_center_top',
++    );
++
+     expect(screen.getByRole('link', { name: '返回条目' })).toHaveAttribute('href', '/subject/12');
+   });
+ 
+diff --git a/packages/website/src/pages/index/subject/[id]/SubjectDetail.spec.tsx b/packages/website/src/pages/index/subject/[id]/SubjectDetail.spec.tsx
+index 74479b0..776ea19 100644
+--- a/packages/website/src/pages/index/subject/[id]/SubjectDetail.spec.tsx
++++ b/packages/website/src/pages/index/subject/[id]/SubjectDetail.spec.tsx
+@@ -102,9 +102,12 @@ describe('SubjectDetail', () => {
+     expect(await screen.findByText('角色介绍')).toBeInTheDocument();
+     expect(await screen.findByText('关联条目')).toBeInTheDocument();
+     expect(await screen.findByText('喜欢这部作品的会员大概会喜欢')).toBeInTheDocument();
+-    expect(document.querySelector('img[src$="/crt/g/00/00/05.jpg"]')).toHaveClass(
++    // 角色立绘使用保留原始比例的 medium 图，从顶部裁剪，避免 grid 居中裁剪只剩腿部
++    expect(document.querySelector('img[src$="/crt/g/00/00/05.jpg"]')).not.toBeInTheDocument();
++    expect(document.querySelector('img[src$="/crt/m/00/00/05.jpg"]')).toHaveClass(
+       'w_85px',
+       'h_auto',
++      'obj-p_center_top',
+     );
+     expect(document.querySelector('img[src$="/cover/g/00/00/13.jpg"]')).toHaveClass(
+       'w_75px',
+diff --git a/packages/website/src/pages/index/subject/[id]/components/SubjectCharacters.tsx b/packages/website/src/pages/index/subject/[id]/components/SubjectCharacters.tsx
+index f613f15..f80c935 100644
+--- a/packages/website/src/pages/index/subject/[id]/components/SubjectCharacters.tsx
++++ b/packages/website/src/pages/index/subject/[id]/components/SubjectCharacters.tsx
+@@ -6,7 +6,7 @@ import { css } from '@bangumi/styled-system/css';
+ import { getCharacterLink, getPersonLink } from '@bangumi/utils/pages.ts';
+ import PageContainer from '@bangumi/website/components/PageContainer/index.tsx';
+ 
+-import { CAST_TYPE_DESC } from './subject-common.ts';
++import { CAST_TYPE_DESC, characterPortrait } from './subject-common.ts';
+ import { SubjectHeader } from './SubjectDetail.tsx';
+ import SubjectSummaryCard from './SubjectSummaryCard.tsx';
+ 
+@@ -58,6 +58,7 @@ const avatar = css({
+   borderRadius: '4px',
+   aspectRatio: '1',
+   objectFit: 'cover',
++  objectPosition: 'center top',
+ });
+ 
+ const avatarFallback = css({
+@@ -176,9 +177,9 @@ export default function SubjectCharacters({
+                         className={avatarLink}
+                         title={characterTitle(character)}
+                       >
+-                        {character.images?.grid ? (
++                        {characterPortrait(character.images) ? (
+                           <img
+-                            src={character.images.grid}
++                            src={characterPortrait(character.images)}
+                             className={avatar}
+                             loading='lazy'
+                             alt=''
+diff --git a/packages/website/src/pages/index/subject/[id]/components/SubjectDetailBlocks.tsx b/packages/website/src/pages/index/subject/[id]/components/SubjectDetailBlocks.tsx
+index e38b667..d8e738d 100644
+--- a/packages/website/src/pages/index/subject/[id]/components/SubjectDetailBlocks.tsx
++++ b/packages/website/src/pages/index/subject/[id]/components/SubjectDetailBlocks.tsx
+@@ -36,7 +36,7 @@ import EpisodeButton from '@bangumi/website/components/EpisodeButton/index.tsx';
+ import { useSubjectHome } from '@bangumi/website/hooks/use-subject-home.ts';
+ import { useUser } from '@bangumi/website/hooks/use-user.tsx';
+ 
+-import { CAST_TYPE_DESC, COLLECT_DESC } from './subject-common.ts';
++import { CAST_TYPE_DESC, characterPortrait, COLLECT_DESC } from './subject-common.ts';
+ import SubjectSection from './SubjectSection.tsx';
+ 
+ const { Link } = Typography;
+@@ -577,7 +577,7 @@ function CharactersSection({
+               title={character.nameCN || character.name}
+             >
+               <img
+-                src={character.images?.grid}
++                src={characterPortrait(character.images)}
+                 className={cx(cover, characterCover)}
+                 loading='lazy'
+                 alt=''
+diff --git a/packages/website/src/pages/index/subject/[id]/components/subject-common.ts b/packages/website/src/pages/index/subject/[id]/components/subject-common.ts
+index 72366dc..399bfe1 100644
+--- a/packages/website/src/pages/index/subject/[id]/components/subject-common.ts
++++ b/packages/website/src/pages/index/subject/[id]/components/subject-common.ts
+@@ -1,3 +1,4 @@
++import type { PersonImages } from '@bangumi/client/client.ts';
+ import { CharacterCastType, CollectionType } from '@bangumi/client/client.ts';
+ 
+ export const COLLECT_DESC: Record<CollectionType, string> = {
+@@ -18,6 +19,16 @@ export const CAST_TYPE_DESC: Partial<Record<CharacterCastType, string>> = {
+   [CharacterCastType.KoreanDub]: '韩语配音',
+ };
+ 
++/**
++ * 角色立绘图片地址。
++ *
++ * `grid` 由后端以 `/r/100x100/` 居中裁剪成正方形，立绘通常是全身像，居中裁剪后只剩腰腿部分；
++ * `medium` 只限宽不裁剪，保留原始比例，交给 CSS 以 `object-position: top` 从顶部裁剪，与旧站一致。
++ */
++export function characterPortrait(images: PersonImages | undefined): string | undefined {
++  return images?.medium || images?.grid || undefined;
++}
++
+ /** 收藏动词：看/读/听/玩 */
+ export function collectVerb(subjectType: number): string {
+   switch (subjectType) {
+-- 
+2.43.0
+

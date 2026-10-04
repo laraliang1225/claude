@@ -1,0 +1,249 @@
+From 0255312df48d179b31f5c8e1370c085dd5452c1d Mon Sep 17 00:00:00 2001
+From: laraliang1225 <smalllicheng@gmail.com>
+Date: Sun, 4 Oct 2026 04:58:44 +0000
+Subject: [PATCH] =?UTF-8?q?feat(subject):=20show=20offprints=20(=E5=8D=95?=
+ =?UTF-8?q?=E8=A1=8C=E6=9C=AC)=20for=20book=20series?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+`/p1/subjects/:id/home` excludes offprint relations (type 1003), so the
+subject page never showed a series' volumes. For book subjects with
+`series: true`, fetch `/p1/subjects/:id/relations?offprint=true` and render
+a 单行本 block with the total count between characters and relations,
+matching the legacy site.
+
+The request is non-suspense so it does not block the rest of the page,
+and it is skipped entirely for non-series subjects.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01JUFGFXc68QQGjEYNk7Y9E1
+Signed-off-by: laraliang1225 <smalllicheng@gmail.com>
+---
+ packages/styled-system/styles.css             |  8 +--
+ .../src/hooks/use-subject-offprints.ts        | 27 +++++++++
+ .../index/subject/[id]/SubjectDetail.spec.tsx | 60 ++++++++++++++++++-
+ .../[id]/components/SubjectDetailBlocks.tsx   | 49 +++++++++++++++
+ 4 files changed, 138 insertions(+), 6 deletions(-)
+ create mode 100644 packages/website/src/hooks/use-subject-offprints.ts
+
+diff --git a/packages/styled-system/styles.css b/packages/styled-system/styles.css
+index 35acba1..1fc92c4 100644
+--- a/packages/styled-system/styles.css
++++ b/packages/styled-system/styles.css
+@@ -1988,14 +1988,14 @@
+     flex: 0 0 85px;
+ }
+ 
+-  .gap_5px_10px {
+-    gap: 5px 10px;
+-}
+-
+   .flex_0_0_80px {
+     flex: 0 0 80px;
+ }
+ 
++  .gap_5px_10px {
++    gap: 5px 10px;
++}
++
+   .bdr_12px {
+     border-radius: 12px;
+ }
+diff --git a/packages/website/src/hooks/use-subject-offprints.ts b/packages/website/src/hooks/use-subject-offprints.ts
+new file mode 100644
+index 0000000..e29f901
+--- /dev/null
++++ b/packages/website/src/hooks/use-subject-offprints.ts
+@@ -0,0 +1,27 @@
++import { ok } from '@oazapfts/runtime';
++import useSWR from 'swr';
++
++import type { SubjectRelation } from '@bangumi/client/client.ts';
++import { ozaClient } from '@bangumi/client/index.ts';
++
++/** 单页最多 100 条，与 API 上限一致 */
++const LIMIT = 100;
++
++/**
++ * 系列条目的单行本列表。
++ *
++ * 条目首页接口不返回单行本（关联类型 1003），需要单独请求。
++ * 非 suspense：单行本区块不阻塞页面其他内容渲染。
++ *
++ * @param subjectID - 条目 ID，传 `null` 时不发起请求
++ */
++export function useSubjectOffprints(subjectID: number | null): {
++  offprints: SubjectRelation[];
++  total: number;
++} {
++  const { data } = useSWR(subjectID === null ? null : `subject-offprints ${subjectID}`, async () =>
++    ok(ozaClient.getSubjectRelations(subjectID!, { offprint: true, limit: LIMIT, offset: 0 })),
++  );
++
++  return { offprints: data?.data ?? [], total: data?.total ?? 0 };
++}
+diff --git a/packages/website/src/pages/index/subject/[id]/SubjectDetail.spec.tsx b/packages/website/src/pages/index/subject/[id]/SubjectDetail.spec.tsx
+index 74479b0..a80148b 100644
+--- a/packages/website/src/pages/index/subject/[id]/SubjectDetail.spec.tsx
++++ b/packages/website/src/pages/index/subject/[id]/SubjectDetail.spec.tsx
+@@ -6,10 +6,11 @@ import { HelmetProvider } from 'react-helmet-async';
+ import { MemoryRouter } from 'react-router-dom';
+ import { SWRConfig } from 'swr';
+ 
+-import type { SubjectHomeResponse } from '@bangumi/client/client.ts';
+-import { CollectionType, EpisodeCollectionStatus } from '@bangumi/client/client.ts';
++import type { SubjectHomeResponse, SubjectRelation } from '@bangumi/client/client.ts';
++import { CollectionType, EpisodeCollectionStatus, SubjectType } from '@bangumi/client/client.ts';
+ import { UserProvider } from '@bangumi/website/hooks/use-user.tsx';
+ import fixture from '@bangumi/website/mocks/fixtures/p1/subjects/12/home-GET.json';
++import relationsFixture from '@bangumi/website/mocks/fixtures/p1/subjects/12/relations-GET.json';
+ import { server as mockServer } from '@bangumi/website/mocks/server.ts';
+ import { renderPage } from '@bangumi/website/utils/test-utils.tsx';
+ 
+@@ -119,6 +120,61 @@ describe('SubjectDetail', () => {
+     expect(await screen.findByText('这部动画很好看！')).toBeInTheDocument();
+   });
+ 
++  it('should render offprints for a book series', async () => {
++    const seriesData = {
++      ...homeData,
++      subject: { ...homeData.subject, type: SubjectType.Book, series: true },
++    };
++    const offprints = (relationsFixture.data as SubjectRelation[]).map((item, index) => ({
++      ...item,
++      relation: { id: 1003, en: 'Offprint', cn: '单行本', jp: '', desc: '' },
++      order: index,
++    }));
++    let offprintQuery: string | null = null;
++    mockServer.use(
++      http.get('http://localhost:3000/p1/subjects/12/home', () => HttpResponse.json(seriesData)),
++      http.get('http://localhost:3000/p1/subjects/12/relations', ({ request }) => {
++        offprintQuery = new URL(request.url).searchParams.get('offprint');
++        return HttpResponse.json({ data: offprints, total: 17 });
++      }),
++    );
++
++    await renderSubjectData(seriesData);
++
++    // 首页接口不含单行本，需带 offprint=true 单独请求；标题显示单行本总数
++    expect(await screen.findByRole('heading', { name: '单行本 · 17' })).toBeInTheDocument();
++    expect(offprintQuery).toBe('true');
++    const offprintSection = screen.getByRole('heading', { name: '单行本 · 17' }).closest('section');
++    const links = within(offprintSection!).getAllByRole('link');
++    expect(links).toHaveLength(offprints.length);
++    expect(within(offprintSection!).getByRole('link', { name: '测试动画2' })).toHaveAttribute(
++      'href',
++      '/subject/13',
++    );
++    // 书籍封面为竖图，使用不裁剪的 medium 图
++    expect(within(offprintSection!).getByAltText('测试动画2')).toHaveAttribute(
++      'src',
++      'https://lain.bgm.tv/pic/cover/m/00/00/13.jpg',
++    );
++  });
++
++  it('should not request offprints for non-series subjects', async () => {
++    setup();
++    let requested = false;
++    mockServer.use(
++      http.get('http://localhost:3000/p1/subjects/12/relations', () => {
++        requested = true;
++        return HttpResponse.json({ data: [], total: 0 });
++      }),
++    );
++
++    await renderSubject();
++
++    expect(await screen.findByText('关联条目')).toBeInTheDocument();
++    expect(screen.queryByRole('heading', { name: /^单行本/ })).not.toBeInTheDocument();
++    expect(requested).toBe(false);
++  });
++
+   it('should render the subject index panel with avatars and tips', async () => {
+     setup();
+     await renderSubject();
+diff --git a/packages/website/src/pages/index/subject/[id]/components/SubjectDetailBlocks.tsx b/packages/website/src/pages/index/subject/[id]/components/SubjectDetailBlocks.tsx
+index e38b667..4693fe9 100644
+--- a/packages/website/src/pages/index/subject/[id]/components/SubjectDetailBlocks.tsx
++++ b/packages/website/src/pages/index/subject/[id]/components/SubjectDetailBlocks.tsx
+@@ -34,6 +34,7 @@ import {
+ } from '@bangumi/utils/pages.ts';
+ import EpisodeButton from '@bangumi/website/components/EpisodeButton/index.tsx';
+ import { useSubjectHome } from '@bangumi/website/hooks/use-subject-home.ts';
++import { useSubjectOffprints } from '@bangumi/website/hooks/use-subject-offprints.ts';
+ import { useUser } from '@bangumi/website/hooks/use-user.tsx';
+ 
+ import { CAST_TYPE_DESC, COLLECT_DESC } from './subject-common.ts';
+@@ -256,6 +257,21 @@ const characterCover = css({
+ 
+ const characterCoverTitle = css({ fontSize: '13px' });
+ 
++const offprintGrid = css({
++  flexWrap: 'nowrap',
++  gap: '10px',
++  padding: '5px',
++  overflowX: 'auto',
++});
++
++const offprintCoverItem = css({ flex: '0 0 80px', width: '80px' });
++
++const offprintCover = css({
++  width: '80px',
++  height: 'auto',
++  aspectRatio: '3 / 4',
++});
++
+ const relationGrid = css({
+   gap: '5px 10px',
+ });
+@@ -599,6 +615,38 @@ function CharactersSection({
+   );
+ }
+ 
++/** 单行本，对齐 PHP 系列条目的单行本区块，仅书籍系列显示 */
++function OffprintsSection({ subject }: { subject: Subject }) {
++  const isSeries = subject.type === SubjectType.Book && subject.series;
++  const { offprints, total } = useSubjectOffprints(isSeries ? subject.id : null);
++
++  if (offprints.length === 0) {
++    return null;
++  }
++  return (
++    <SubjectSection title={`单行本 · ${total}`}>
++      <ul className={cx(coverGrid, offprintGrid)}>
++        {offprints.map(({ subject: offprint }) => (
++          <li key={offprint.id} className={cx(coverItem, offprintCoverItem)}>
++            <Link
++              to={getSubjectLink(offprint.id)}
++              className={coverLink}
++              title={offprint.nameCN || offprint.name}
++            >
++              <img
++                src={offprint.images?.medium}
++                className={cx(cover, offprintCover)}
++                loading='lazy'
++                alt={offprint.nameCN || offprint.name}
++              />
++            </Link>
++          </li>
++        ))}
++      </ul>
++    </SubjectSection>
++  );
++}
++
+ /** 关联条目，对齐 PHP block_relation */
+ function RelationsSection({
+   subjectId,
+@@ -809,6 +857,7 @@ export const SubjectSecondaryBlocks: React.FC<{ data: SubjectHomeResponse }> = (
+   return (
+     <>
+       <CharactersSection subjectId={subject.id} characters={data.characters} />
++      <OffprintsSection subject={subject} />
+       <RelationsSection subjectId={subject.id} relations={data.relations} />
+       <RecsSection recs={data.recs} />
+       <ReviewsSection subjectId={subject.id} reviews={data.reviews} />
+-- 
+2.43.0
+
